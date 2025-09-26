@@ -2,11 +2,14 @@
   "name": "web-paymentgateway",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
+    "build": "next build",
+    "start": "next start -p $PORT",
+    "lint": "eslint ."
   },
   "dependencies": {
     "mongoose": "^8.18.2",

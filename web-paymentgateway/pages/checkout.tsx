@@ -61,7 +61,7 @@ export default function CheckoutPage() {
       const cur = c[id] || 0;
       let n: Record<string, number>;
       if (cur <= 1) {
-        const { [id]: _, ...rest } = c;
+        const { [id]: _removed, ...rest } = c; // ← rename biar lint nggak error
         n = rest;
       } else {
         n = { ...c, [id]: cur - 1 };
@@ -98,9 +98,9 @@ export default function CheckoutPage() {
       }
       window.location.href = `/payment/${data.orderId}`;
     } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        alert(`Network/Unexpected error: ${message}`);
-      }    
+      const message = e instanceof Error ? e.message : String(e);
+      alert(`Network/Unexpected error: ${message}`);
+    }
   }
 
   return (

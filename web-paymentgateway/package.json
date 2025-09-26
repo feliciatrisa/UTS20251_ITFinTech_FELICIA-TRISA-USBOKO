@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start -p $PORT",
-    "lint": "eslint ."
+    "start": "next start",
+    "lint": "eslint"
   },
   "dependencies": {
     "mongoose": "^8.18.2",

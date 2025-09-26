@@ -97,9 +97,10 @@ export default function CheckoutPage() {
         return;
       }
       window.location.href = `/payment/${data.orderId}`;
-    } catch (e: any) {
-      alert(`Network/Unexpected error: ${e?.message || e}`);
-    }
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        alert(`Network/Unexpected error: ${message}`);
+      }    
   }
 
   return (

@@ -61,8 +61,8 @@ export default function CheckoutPage() {
       const cur = c[id] || 0;
       let n: Record<string, number>;
       if (cur <= 1) {
-        const { [id]: _removed, ...rest } = c; // ← rename biar lint nggak error
-        n = rest;
+        n = { ...c };
+        delete n[id]; // ← hapus properti tanpa bikin var unused
       } else {
         n = { ...c, [id]: cur - 1 };
       }

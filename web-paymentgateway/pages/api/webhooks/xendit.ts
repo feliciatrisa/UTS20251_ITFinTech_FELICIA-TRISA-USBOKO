@@ -5,34 +5,53 @@ import Payment from "../../../models/Payment";
 
 export const config = { api: { bodyParser: true } };
 
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function pickStr(o: Record<string, unknown>, k: string): string | undefined {
+  const v = o[k]; return typeof v === "string" ? v : undefined;
+}
+function pickNum(o: Record<string, unknown>, k: string): number | undefined {
+  const v = o[k]; return typeof v === "number" ? v : undefined;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") return res.status(405).end();
   await dbConnect();
 
-  const token = req.headers["x-callback-token"];
-  if (!token || token !== process.env.XENDIT_CALLBACK_TOKEN) {
-    return res.status(401).json({ ok: false });
-  }
+  // verifikasi token callback
+  const expected = process.env.XENDIT_CALLBACK_TOKEN;
+  const hdr = req.headers["x-callback-token"];
+  const token = Array.isArray(hdr) ? hdr[0] : hdr;
+  if (!expected || token !== expected) return res.status(401).json({ ok: false, error: "invalid_token" });
 
-  const event = req.body as any;
+  if (!isObj(req.body)) return res.status(400).json({ ok: false, error: "invalid_body" });
+  const root = req.body;
+  const data = isObj(root.data) ? root.data : undefined;
+
+  // normalisasi status & field
+  const status = pickStr(root, "status") ?? pickStr(root, "event") ?? (data && pickStr(data, "status"));
+  const isPaid = status === "PAID" || status === "invoice.paid";
+
   try {
-    if (event?.status === "PAID" || event?.event === "invoice.paid") {
-      const invoiceId = event?.id || event?.data?.id;
-      const externalId = event?.external_id || event?.data?.external_id;
-      const amount = event?.amount || event?.data?.amount;
+    if (isPaid) {
+      const invoiceId = pickStr(root, "id") ?? (data && pickStr(data, "id"));
+      const externalId = pickStr(root, "external_id") ?? (data && pickStr(data, "external_id"));
+      const amount = pickNum(root, "amount") ?? (data && pickNum(data, "amount"));
 
-      const where = externalId ? { _id: externalId } : { invoiceId };
-      await Checkout.findOneAndUpdate(where, { status: "LUNAS" });
+      const where = externalId ? { _id: externalId } : invoiceId ? { invoiceId } : null;
+      if (where) await Checkout.findOneAndUpdate(where, { status: "LUNAS" });
 
       await Payment.create({
         invoiceId: invoiceId ?? "(unknown)",
         amount,
         status: "PAID",
         paidAt: new Date(),
-        raw: event,
+        raw: root
       });
     }
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false });
+    return res.json({ ok: true });
+  } catch {
+    return res.status(500).json({ ok: false });
   }
 }

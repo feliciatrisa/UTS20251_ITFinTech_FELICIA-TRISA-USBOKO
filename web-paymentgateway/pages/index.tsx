@@ -35,7 +35,7 @@ export default function SelectItems() {
   function inc(id: string) { save({ ...cart, [id]: (cart[id] || 0) + 1 }); }
   function dec(id: string) {
     const cur = cart[id] || 0;
-    if (cur <= 1) { const { [id]:_, ...rest } = cart; save(rest); }
+    if (cur <= 1) { const { [id]: _removed, ...rest } = cart; save(rest); }
     else { save({ ...cart, [id]: cur - 1 }); }
   }
 

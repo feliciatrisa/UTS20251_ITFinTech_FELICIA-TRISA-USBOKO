@@ -15,7 +15,6 @@ type MongooseCache = {
 
 // deklarasikan variable global dengan tipe yang benar (tanpa any)
 declare global {
-  // eslint-disable-next-line no-var
   var __mongoose_cache__: MongooseCache | undefined;
 }
 

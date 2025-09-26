@@ -5,9 +5,11 @@ type Product = { _id: string; name: string; price: number; category: string; ima
 
 // mapping nama -> url gambar (fallback ke p.image kalau nanti kamu simpan di DB)
 const IMAGE_MAP: Record<string, string> = {
-  "Americano": "https://www.nescafe.com/id/sites/default/files/2023-08/Kopi-Hitam-Americano-dan-Espresso%2C-Apa-Bedanya%2C-Ya_hero.jpg",
+  "Americano":
+    "https://www.nescafe.com/id/sites/default/files/2023-08/Kopi-Hitam-Americano-dan-Espresso%2C-Apa-Bedanya%2C-Ya_hero.jpg",
   "Latte": "https://richcreme.com/wp-content/uploads/2022/07/latte.jpg",
-  "Donut": "https://asset.kompas.com/crops/8DNn_TysDAvoJh8llTBWsDiY0QM=/0x0:1000x667/1200x800/data/photo/2020/07/11/5f099b4239eb1.jpg",
+  "Donut":
+    "https://asset.kompas.com/crops/8DNn_TysDAvoJh8llTBWsDiY0QM=/0x0:1000x667/1200x800/data/photo/2020/07/11/5f099b4239eb1.jpg",
 };
 
 export default function SelectItems() {
@@ -18,13 +20,15 @@ export default function SelectItems() {
   const [q, setQ] = useState("");
 
   useEffect(() => {
-    fetch("/api/products").then(r => r.json()).then(d => setProducts(d.products || []));
+    fetch("/api/products")
+      .then((r) => r.json())
+      .then((d) => setProducts(d.products || []));
     const saved = localStorage.getItem("cart");
     if (saved) setCart(JSON.parse(saved));
   }, []);
 
   const categories = useMemo(
-    () => ["All", ...Array.from(new Set(products.map(p => p.category)))],
+    () => ["All", ...Array.from(new Set(products.map((p) => p.category)))],
     [products]
   );
 
@@ -32,18 +36,27 @@ export default function SelectItems() {
     setCart(next);
     localStorage.setItem("cart", JSON.stringify(next));
   }
-  function inc(id: string) { save({ ...cart, [id]: (cart[id] || 0) + 1 }); }
+  function inc(id: string) {
+    save({ ...cart, [id]: (cart[id] || 0) + 1 });
+  }
   function dec(id: string) {
     const cur = cart[id] || 0;
-    if (cur <= 1) { const { [id]: _removed, ...rest } = cart; save(rest); }
-    else { save({ ...cart, [id]: cur - 1 }); }
+    if (cur <= 1) {
+      const n = { ...cart }; // ← hindari var unused
+      delete n[id];
+      save(n);
+    } else {
+      save({ ...cart, [id]: cur - 1 });
+    }
   }
 
   const filtered = useMemo(() => {
-    const byCat = products.filter(p => filter === "All" || p.category === filter);
+    const byCat = products.filter((p) => filter === "All" || p.category === filter);
     if (!q.trim()) return byCat;
     const k = q.toLowerCase();
-    return byCat.filter(p => p.name.toLowerCase().includes(k) || p.category.toLowerCase().includes(k));
+    return byCat.filter(
+      (p) => p.name.toLowerCase().includes(k) || p.category.toLowerCase().includes(k)
+    );
   }, [products, filter, q]);
 
   const totalItems = Object.values(cart).reduce((s, n) => s + n, 0);
@@ -60,7 +73,7 @@ export default function SelectItems() {
           <input
             placeholder="Search menu…"
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={(e) => setQ(e.target.value)}
             className="bg-transparent outline-none flex-1"
           />
         </div>
@@ -78,7 +91,7 @@ export default function SelectItems() {
 
       {/* category chips */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {categories.map(c => {
+        {categories.map((c) => {
           const active = c === filter;
           return (
             <button
@@ -95,16 +108,12 @@ export default function SelectItems() {
 
       {/* product grid (landscape) */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filtered.map(p => {
+        {filtered.map((p) => {
           const qty = cart[p._id] || 0;
           const img = IMAGE_MAP[p.name] || p.image || "/file.svg";
           return (
             <div key={p._id} className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-              <img
-                src={img}
-                alt={p.name}
-                className="w-full h-40 object-cover bg-white/10"
-              />
+              <img src={img} alt={p.name} className="w-full h-40 object-cover bg-white/10" />
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -126,11 +135,19 @@ export default function SelectItems() {
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <button onClick={() => dec(p._id)}
-                        className="w-8 h-8 rounded-lg border border-white/15 hover:bg-white/10">−</button>
+                      <button
+                        onClick={() => dec(p._id)}
+                        className="w-8 h-8 rounded-lg border border-white/15 hover:bg-white/10"
+                      >
+                        −
+                      </button>
                       <div className="w-7 text-center">{qty}</div>
-                      <button onClick={() => inc(p._id)}
-                        className="w-8 h-8 rounded-lg border border-white/15 hover:bg-white/10">+</button>
+                      <button
+                        onClick={() => inc(p._id)}
+                        className="w-8 h-8 rounded-lg border border-white/15 hover:bg-white/10"
+                      >
+                        +
+                      </button>
                     </div>
                   )}
                 </div>
@@ -142,7 +159,9 @@ export default function SelectItems() {
 
       {/* footer */}
       <div className="mt-8 flex items-center justify-between">
-        <div>Total items: <b>{totalItems}</b></div>
+        <div>
+          Total items: <b>{totalItems}</b>
+        </div>
         <button
           onClick={() => router.push("/checkout")}
           disabled={totalItems === 0}

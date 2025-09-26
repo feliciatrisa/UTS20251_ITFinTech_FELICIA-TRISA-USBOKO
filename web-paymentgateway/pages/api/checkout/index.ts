@@ -3,73 +3,110 @@ import { dbConnect } from "../../../lib/mongodb";
 import Product from "../../../models/Product";
 import Checkout from "../../../models/Checkout";
 
+type CheckoutItem = { productId: string; qty: number };
+type CheckoutBody = { items: CheckoutItem[]; email: string };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function isCheckoutBody(v: unknown): v is CheckoutBody {
+  if (!isRecord(v)) return false;
+  const items = v.items;
+  const email = v.email;
+  if (!Array.isArray(items) || typeof email !== "string") return false;
+  return items.every(
+    (x) => isRecord(x) && typeof x.productId === "string" && typeof x.qty === "number" && x.qty > 0
+  );
+}
+
+async function createXenditInvoice(externalId: string, amount: number, email: string) {
+  const secret = process.env.XENDIT_SECRET_KEY;
+  const base = process.env.NEXT_PUBLIC_BASE_URL;
+  if (!secret || !base) {
+    return { invoiceUrl: undefined, raw: { error: "missing_xendit_env" } };
+  }
+  const auth = Buffer.from(`${secret}:`).toString("base64");
+
+  const resp = await fetch("https://api.xendit.co/v2/invoices", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${auth}`,
+    },
+    body: JSON.stringify({
+      external_id: externalId,
+      amount,
+      payer_email: email,
+      success_redirect_url: `${base}/payment/${externalId}`,
+      failure_redirect_url: `${base}/payment/${externalId}?fail=1`,
+      currency: "IDR",
+    }),
+  });
+
+  const status = resp.status;
+  const json = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+  const invoiceUrl =
+    (typeof json.invoice_url === "string" && json.invoice_url) ||
+    (typeof json["invoice_url"] === "string" && (json["invoice_url"] as string)) ||
+    undefined;
+
+  return { invoiceUrl, status, raw: json };
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
+
   await dbConnect();
 
-  const { items, email } = req.body as { items: { productId: string; qty: number }[]; email: string };
-
-  // ambil produk & hitung total
-  const ids = items.map(i => i.productId);
-  const found = await Product.find({ _id: { $in: ids } }).lean();
-  const filled = items.map(i => {
-    const p = found.find(f => String(f._id) === i.productId)!;
-    return { productId: p._id, name: p.name, price: p.price, qty: i.qty };
-  });
-  const total = filled.reduce((s, it) => s + it.price * it.qty, 0);
-
-  const checkout = await Checkout.create({ email, items: filled, total, status: "PENDING" });
-
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  const secret = process.env.XENDIT_SECRET_KEY;
-
-  // Log: pastikan key terbaca
-  console.log(
-    "XENDIT_SECRET_KEY?",
-    secret ? `present (${secret.slice(0, 16)}…)` : "MISSING"
-  );
-
-  // Kalau tidak ada key -> dummy
-  if (!secret || !secret.trim()) {
-    const invoiceId = `DUMMY-${checkout._id}`;
-    const invoiceUrl = `${baseUrl}/payment/${checkout._id}?dummy=1`;
-    await Checkout.findByIdAndUpdate(checkout._id, { invoiceId, paymentLink: invoiceUrl });
-    return res.json({ orderId: checkout._id, invoiceId, invoiceUrl });
+  // Validasi body tanpa `any`
+  const bodyUnknown = req.body as unknown;
+  if (!isCheckoutBody(bodyUnknown)) {
+    return res.status(400).json({ ok: false, error: "invalid_body" });
   }
+  const { items, email } = bodyUnknown;
 
-  // Buat invoice Xendit
+  // Ambil produk & hitung total
+  const ids = items.map((it) => it.productId);
+  const products = await Product.find({ _id: { $in: ids } }).lean();
+
+  let amount = 0;
+  for (const it of items) {
+    const p = products.find((x) => String(x._id) === it.productId);
+    if (!p) return res.status(400).json({ ok: false, error: "product_not_found", productId: it.productId });
+    amount += (p.price as number) * it.qty;
+  }
+  if (amount <= 0) return res.status(400).json({ ok: false, error: "amount_zero" });
+
+  // Simpan order lokal
+  const order = await Checkout.create({
+    email,
+    items,
+    amount,
+    status: "PENDING",
+  });
+
+  const orderId = String(order._id);
+
+  // Buat invoice Xendit (jika env tersedia)
   try {
-    const resp = await fetch("https://api.xendit.co/v2/invoices", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Basic " + Buffer.from(secret + ":").toString("base64"),
-        "X-Idempotency-Key": checkout._id.toString(),
-      },
-      body: JSON.stringify({
-        external_id: checkout._id.toString(),
-        payer_email: email,
-        amount: total,
-        description: "UTS Payment",
-        success_redirect_url: `${baseUrl}/payment/${checkout._id}`,
-        failure_redirect_url: `${baseUrl}/payment/${checkout._id}`,
-      }),
-    });
-
-    const text = await resp.text();
-    if (!resp.ok) {
-      console.error("Xendit create invoice failed:", resp.status, text);
-      return res.status(500).json({ error: "xendit_failed", status: resp.status, body: text });
+    const { invoiceUrl, status, raw } = await createXenditInvoice(orderId, amount, email);
+    if (!invoiceUrl) {
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        invoiceUrl: null,
+        xenditStatus: status,
+        xendit: raw,
+      });
     }
-
-    const inv = JSON.parse(text);
-    await Checkout.findByIdAndUpdate(checkout._id, {
-      invoiceId: inv.id,
-      paymentLink: inv.invoice_url,
+    return res.status(200).json({ ok: true, orderId, invoiceUrl });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      invoiceUrl: null,
+      error: message,
     });
-    return res.json({ orderId: checkout._id, invoiceId: inv.id, invoiceUrl: inv.invoice_url });
-  } catch (e: any) {
-    console.error("Xendit fetch error:", e?.message || e);
-    return res.status(500).json({ error: "xendit_exception", message: String(e?.message || e) });
   }
 }
